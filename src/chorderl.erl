@@ -335,7 +335,7 @@ find_successor(Id, State) ->
                     case closest_preceding_node(Id, State) of
                         {ok, CPNode} ->
                             call(CPNode, {find_successor, Id}, State#state.tcp_timeout);
-                        {error, _Reason} ->
+                        {ok, preceding_node_not_found} ->
                             {ok, Me}
                     end
             end
@@ -350,7 +350,7 @@ closest_preceding_node(Id, State) ->
     do_closest_preceding_node(list_to_integer(Id, 16), N, RFs).
 
 do_closest_preceding_node(Id, _N, []) ->
-    {error, preceding_node_not_found};
+    {ok, preceding_node_not_found};
 do_closest_preceding_node(Id, N, [undefined | Fs]) ->
     do_closest_preceding_node(Id, N, Fs);
 do_closest_preceding_node(Id, N, [F | Fs]) ->
@@ -377,25 +377,41 @@ update_finger(Nth, NewF, FingerTable) ->
 
 
 call(Node, Request, Timeout) when is_record(Node, chord_node) ->
-    {ok, Socket} = send(Node, Request),
-    R = case gen_tcp:recv(Socket, 0, Timeout) of
-              {ok, Res} ->
-                  binary_to_term(Res);
-              {error, Reason} ->
-                  {error, Reason}
-        end,
-    ok = gen_tcp:close(Socket),
-    R.
+    case send(Node, Request) of
+        {ok, Socket} ->
+            case gen_tcp:recv(Socket, 0, Timeout) of
+                {ok, Res} ->
+                    gen_tcp:close(Socket),
+                    binary_to_term(Res);
+                {error, Reason} ->
+                    gen_tcp:close(Socket),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 cast(Node, Msg) when is_record(Node, chord_node) ->
-    {ok, Socket} = send(Node, Msg),
-    ok = gen_tcp:close(Socket).
+    case send(Node, Msg) of
+        {ok, Socket} ->
+            gen_tcp:close(Socket);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 send(#chord_node{address = Address, port = Port}, Msg) ->
-    %% TODO: Get the port
-    {ok, Socket} = gen_tcp:connect(Address, Port, ?TCP_SETTINGS),
-    gen_tcp:send(Socket, term_to_binary(Msg)),
-    {ok, Socket}.
+    case gen_tcp:connect(Address, Port, ?TCP_SETTINGS) of
+        {ok, Socket} ->
+            case gen_tcp:send(Socket, term_to_binary(Msg)) of
+                ok ->
+                    {ok, Socket};
+                {error, SendError} ->
+                    gen_tcp:close(Socket),
+                    {error, SendError}
+            end;
+        {error, ConnectError} ->
+            {error, ConnectError}
+    end.
 
 %% @doc Returns the IP address associated to the specified network interface.
 get_address(NIF) ->
