@@ -1,0 +1,5 @@
+*~
+ebin
+rel/chorderl
+rel/dev
+rel/vars/dev*_vars.config

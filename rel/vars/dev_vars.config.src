@@ -1,0 +1,7 @@
+{node, @NODE@}.
+{network_interface, en1}.
+{port, @PORT@}.
+{tcp_timeout, 1000}.
+{stabilize_interval, 500}.
+{fixfingers_interval, 500}.
+{checkpredecessor_interval, 500}.

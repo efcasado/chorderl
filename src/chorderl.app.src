@@ -1,0 +1,12 @@
+{application, chorderl,
+ [
+  {description, ""},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { chorderl_app, []}},
+  {env, []}
+ ]}.
