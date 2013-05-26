@@ -246,6 +246,10 @@ predecessor(Succ, State) ->
 stabilize(State) ->
     [Succ|_] = State#state.fingers,
     NewState = case predecessor(Succ, State) of
+                   %% If we cannot contact our successor, we set it as down.
+                   {error, commerror} ->
+                       Fs = update_finger(0, State#state.me, State#state.fingers),
+                       State#state{fingers = Fs};
                    {error, Reason} ->
                        State;
                    {ok, undefined} ->
@@ -294,6 +298,7 @@ fix_fingers(State) ->
                      {ok, NewF} ->
                          update_finger(State#state.next, NewF, State#state.fingers);
                      {error, _Reason} ->
+                         io:format("~p~n", [_Reason]),
                          State#state.fingers
                  end,
     State#state{next = Next, fingers = NewFingers}.

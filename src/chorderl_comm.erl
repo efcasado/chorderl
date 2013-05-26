@@ -17,20 +17,20 @@ call(Node, Request, Timeout) when is_record(Node, chord_node) ->
                 {ok, Res} ->
                     gen_tcp:close(Socket),
                     binary_to_term(Res);
-                {error, Reason} ->
+                {error, _Reason} ->
                     gen_tcp:close(Socket),
-                    {error, Reason}
+                    {error, commerror}
             end;
-        {error, Reason} ->
-            {error, Reason}
+        {error, _Reason} ->
+            {error, commerror}
     end.
 
 cast(Node, Msg) when is_record(Node, chord_node) ->
     case send(Node, Msg) of
         {ok, Socket} ->
             gen_tcp:close(Socket);
-        {error, Reason} ->
-            {error, Reason}
+        {error, _Reason} ->
+            {error, commerror}
     end.
 
 send(#chord_node{address = Address, port = Port}, Msg) ->
