@@ -13,7 +13,7 @@
 -include("../include/chorderl.hrl").
 
 %% API
--export([create/0, create/1, join/1, join/2, info/0]).
+-export([create/0, create/1, join/1, join/2, lookup/1, info/0]).
 -export([start_link/1]).
 
 %% gen_server callbacks
@@ -53,6 +53,9 @@ join(BootstrapNode) ->
 
 join(BootstrapNode, Opts) ->
     supervisor:start_child(?SUPERVISOR, [[{join, BootstrapNode}, Opts]]).
+
+lookup(Key) ->
+    gen_server:call(?MODULE, {lookup, Key}).
 
 info() ->
     case gen_server:call(?MODULE, info) of
@@ -222,7 +225,21 @@ handle_info(Msg, State) ->
     {noreply, State}.
 
 handle_call(info, _From, State) ->
-    {reply, {ok, State}, State}. 
+    {reply, {ok, State}, State}; 
+handle_call({lookup, Key}, From, State) ->
+    spawn(fun() ->
+                  Reply = case find_successor(Key, State) of
+                              {ok, Node} ->
+                                  Port = Node#chord_node.port,
+                                  Addr = Node#chord_node.address,
+                                  {ok, string:join([Addr, integer_to_list(Port)], ":")};
+                              {error, Reason} ->
+                                  {error, Reason}
+                          end,
+                  gen_server:reply(From, Reply)
+          end),
+    {noreply, State}.
+
 
 
 %% ==============================
