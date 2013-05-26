@@ -1,19 +1,48 @@
 -module(chorderl_comm).
 
--export([call/2, cast/2]).
+-include("../include/chorderl.hrl").
 
-call(To, Message) ->
-    case send(To, Message) of
+-export([call/2, call/3, cast/2]).
+
+-define(TCP_SETTINGS, [binary, {active, false}]).
+
+
+call(Node, Request) when is_record(Node, chord_node) ->
+    call(Node, Request, infinity).
+
+call(Node, Request, Timeout) when is_record(Node, chord_node) ->
+    case send(Node, Request) of
         {ok, Socket} ->
-            gen_tcp:recv(Socket, 0);
-        Other ->
-            Other
+            case gen_tcp:recv(Socket, 0, Timeout) of
+                {ok, Res} ->
+                    gen_tcp:close(Socket),
+                    binary_to_term(Res);
+                {error, Reason} ->
+                    gen_tcp:close(Socket),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
 
-cast(To, Message) ->
-    send(To, Message).
+cast(Node, Msg) when is_record(Node, chord_node) ->
+    case send(Node, Msg) of
+        {ok, Socket} ->
+            gen_tcp:close(Socket);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
-send(To, Message) ->
-    {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, 8080, []),
-    gen_tcp:send(Socket, Message),
-    {ok, Socket}.
+send(#chord_node{address = Address, port = Port}, Msg) ->
+    case gen_tcp:connect(Address, Port, ?TCP_SETTINGS) of
+        {ok, Socket} ->
+            case gen_tcp:send(Socket, term_to_binary(Msg)) of
+                ok ->
+                    {ok, Socket};
+                {error, SendError} ->
+                    gen_tcp:close(Socket),
+                    {error, SendError}
+            end;
+        {error, ConnectError} ->
+            {error, ConnectError}
+    end.

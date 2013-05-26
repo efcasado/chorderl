@@ -6,9 +6,6 @@
 %%% @end
 %%% Created : 22 Apr 2013 by Enrique Fernandez Casado <efcasado@gmail.com>
 %%%-------------------------------------------------------------------
-%% TODO: Improve use of gen_tcp
-%% TODO: Improve error handling (what if a node disconnects?)
-%% TODO: Add timeouts
 -module(chorderl).
 
 -behaviour(gen_server).
@@ -36,7 +33,6 @@
           tcp_timeout
         }).
 
--define(TCP_SETTINGS, [binary, {active, false}]).
 -define(SUPERVISOR, chorderl_sup).
 
 
@@ -159,7 +155,9 @@ init_fingers(create, State = #state{ me = Me }) ->
     {ok, State#state{ fingers = Fingers }};
 init_fingers({join, BootstrapAddress}, State = #state{ me = Me }) ->
     {ok, BootstrapNode} = get_bootstrap_node(BootstrapAddress),
-    case call(BootstrapNode, {find_successor, Me#chord_node.id}, State#state.tcp_timeout) of
+    case chorderl_comm:call(BootstrapNode, 
+                            {find_successor, Me#chord_node.id}, 
+                            State#state.tcp_timeout) of
         {error, Reason} ->
             {error, Reason};
         {ok, Succ} ->
@@ -239,7 +237,7 @@ predecessor(Succ, State) ->
         true  ->
             {ok, State#state.predecessor};
         false ->
-            call(Succ, predecessor, State#state.tcp_timeout)
+            chorderl_comm:call(Succ, predecessor, State#state.tcp_timeout)
     end.
             
 
@@ -268,7 +266,7 @@ stabilize(State) ->
         true  ->
             ok;
         false ->
-            cast(Succ, {notify, NewState#state.me})
+            chorderl_comm:cast(Succ, {notify, NewState#state.me})
     end,
     NewState.
 
@@ -310,7 +308,7 @@ check_predecessor(State) ->
         undefined ->
             State;
         Predecessor ->
-            case call(Predecessor, ping, State#state.tcp_timeout) of
+            case chorderl_comm:call(Predecessor, ping, State#state.tcp_timeout) of
                 pong ->
                     State;
                 {error, _Reason} ->
@@ -333,10 +331,12 @@ find_successor(Id, State) ->
                     {ok, Succ};
                 false ->
                     case closest_preceding_node(Id, State) of
-                        {ok, CPNode} ->
-                            call(CPNode, {find_successor, Id}, State#state.tcp_timeout);
                         {ok, preceding_node_not_found} ->
-                            {ok, Me}
+                            {ok, Me};
+                        {ok, CPNode} ->
+                            chorderl_comm:call(CPNode, 
+                                               {find_successor, Id}, 
+                                               State#state.tcp_timeout)
                     end
             end
     end.
@@ -375,43 +375,6 @@ update_finger(Nth, NewF, FingerTable) ->
     {Pre, [_ | Post]} = lists:split(Nth, FingerTable), 
     lists:append(Pre, [NewF | Post]).
 
-
-call(Node, Request, Timeout) when is_record(Node, chord_node) ->
-    case send(Node, Request) of
-        {ok, Socket} ->
-            case gen_tcp:recv(Socket, 0, Timeout) of
-                {ok, Res} ->
-                    gen_tcp:close(Socket),
-                    binary_to_term(Res);
-                {error, Reason} ->
-                    gen_tcp:close(Socket),
-                    {error, Reason}
-            end;
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-cast(Node, Msg) when is_record(Node, chord_node) ->
-    case send(Node, Msg) of
-        {ok, Socket} ->
-            gen_tcp:close(Socket);
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-send(#chord_node{address = Address, port = Port}, Msg) ->
-    case gen_tcp:connect(Address, Port, ?TCP_SETTINGS) of
-        {ok, Socket} ->
-            case gen_tcp:send(Socket, term_to_binary(Msg)) of
-                ok ->
-                    {ok, Socket};
-                {error, SendError} ->
-                    gen_tcp:close(Socket),
-                    {error, SendError}
-            end;
-        {error, ConnectError} ->
-            {error, ConnectError}
-    end.
 
 %% @doc Returns the IP address associated to the specified network interface.
 get_address(NIF) ->
